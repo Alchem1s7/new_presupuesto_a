@@ -223,7 +223,7 @@ def informe_de_gobierno(row, mapping_dicts):
         result = mapping_dicts['cve_nue'].get(row['cve_nue'])
     
     if result is None:
-        result = mapping_dicts['cve_adm'].get(row['cve_adm'])
+        result = mapping_dicts['nombre_dependencia'].get(row['nombre_dependencia'])
     
     if result is None:
         extracted_char = row['cadena_siafeq'][40]
@@ -241,12 +241,12 @@ def mapping_columns(new_df, connections_dict):
         "dim_ff" : pd.read_csv(connections_dict["estructuraff"], dtype=str, usecols=["CVE ORIGEN","ORIGEN","CVE RAMO","RAMO2"]),
         "dim_nue" : pd.read_csv(connections_dict["nue"], dtype=str, usecols=["Depto.","Agrupa dep","DESCRIPCION","Agrupado en:"]),
         "new_dim_nue" : pd.read_csv(connections_dict["nue_new"], usecols=["NUE5","Afectable","DEP. EJECUTORA"]),
-        "dim_prep" : pd.read_csv(connections_dict["desc_prep"], dtype=str, usecols=["Agrupador","Sector"]),
+        "dim_prep" : pd.read_csv(connections_dict["desc_prep"], dtype=str, usecols=["Agrupador","Sector","Nombre reporte Srio."]),
         "dim_clasf_og" : pd.read_csv(connections_dict["clas_og"], dtype=str, usecols=["COG2","CONCEPTO EF"]),
         "dim_nup" : pd.read_csv(connections_dict["nup"], dtype=str, usecols=["Clave Rubro","Rubro","Clave NUP","NUP"]),
         "clas_admin_dim" : pd.read_csv(connections_dict["clas_admin"],dtype=str, usecols=["CLAVE","ENTIDAD"]),
         "clasifff_dim" : pd.read_csv(connections_dict["clasiff"], dtype=str, usecols=["FUENTE DE FINANCIAMIENTO","Nombre FF SIAFEQ"]),
-        "informe_dim" : pd.read_csv(connections_dict["informe"])
+        "informe_dim" : pd.read_csv(connections_dict["informe"], dtype=str).dropna().reset_index(drop=True)
     }
 
     
@@ -428,7 +428,7 @@ def rename_numeric_columns(new_df_cols):
             original_col = column  
             
             if "pre_" in column:
-                col = column.replace("pre_", "pre-")
+                column = column.replace("pre_", "pre-")
             
             # Split the column name and re organize
             col_parts = column.split("_")
@@ -445,7 +445,7 @@ def rename_numeric_columns(new_df_cols):
         else:
             # If we have non-numeric cols (Those who doesn't have conceptos)
             # Then we save it like it is
-            name_mapping[col] = col
+            name_mapping[column] = column
     
     return name_mapping
     
@@ -500,7 +500,7 @@ def consolidate_final_df(new_df, hist_df):
     # Stablish the new column names for second time
     # By doing this, the numeric columns in new_df and hist_df can match
     new_df.rename(columns=name_mapping, inplace=True)
-
+    print(name_mapping)
     # Filter the columns we are not interested in
     relevant_columns = []
     unnecessary_column_names = [
@@ -581,12 +581,20 @@ def consolidate_final_df(new_df, hist_df):
 def operations_in_complete_df(df_melted, external_data_dict):
     print("\n[INFO] Starting: Operations in concatenated dataframe")
     columns_dict = {}
+    
+    # Nombre dependencia
+    df_melted["nombre_dependencia"] = df_melted["nombre_nue"].map(
+        external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict()
+    )
+
+
+    
     # Informe
     mapping_dicts = {
-        'ff': external_data_dict["informe_dim"].iloc[88:106].set_index('Clasificador')['Informe'].to_dict(), 
-        'cve_nue': external_data_dict["informe_dim"].iloc[107:133].set_index('Clasificador')['Informe'].to_dict(), 
-        'cve_adm': external_data_dict["informe_dim"].dropna(subset=['Clasificador', 'Informe']).set_index('Clasificador')['Informe'].to_dict(), 
-        'cadena_siafeq': external_data_dict["informe_dim"].iloc[85:87].set_index('Clasificador')['Informe'].to_dict()  
+        'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), # correct
+        'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(), # correct
+        'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(), # TODO kjdskdjs nombre dependenciagg
+        'cadena_siafeq': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict()  
     }
     df_melted['informe'] = df_melted.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
     df_melted['informe'] = df_melted['informe'].str.upper()
@@ -604,7 +612,7 @@ def dimensional_creator(df_melted):
         "dim_fuente": ['ff','cve_conac1','conac1','cve_conac2','conac2','federal_/_estatal','cve_año','año_ff','cve_ramo','ramo','origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp'],
         "dim_programa": ['cve_prog','prog','cve_fun','finalidad','función','sub__función','cve_a/s','a/s','cve_pedq','pedq'],
         "dim_entidad": ['cve_urg', 'urg', 'cve_adm', 'adm', 'entidad', 'entidad_2', 'entidad_gs'],
-        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección'],
+        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección',"nombre_dependencia"],
         "dim_proyecto": ["cve_nup","nombre_nup","rubro_nup","concepto_ef","informe"]
     }
     
@@ -744,6 +752,7 @@ def dimensionals_creator_on_sql(conn_dict):
         Column('nue_sin_oya', String(255)),
         Column('sector', String(255)),
         Column('dirección', String(255)),
+        Column('nombre_dependencia', String(255)),
         extend_existing=True
     )
 

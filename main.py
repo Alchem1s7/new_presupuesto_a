@@ -413,7 +413,42 @@ def mapping_columns(new_df, connections_dict):
     print("[INFO] Finished: Mapping columns with external data")
     return new_df, external_data_dict
     
+def rename_numeric_columns(new_df_cols):
+    
+    name_mapping = {}
+    conceptos = [
+        "aprobado", "modificado", "pre_comprometido", "comprometido",
+        "devengado", "saldo", "ejercido", "pagado", "pre_modificado"
+    ]
 
+    for column in new_df_cols:
+        
+        # Check if the column has any concept:
+        if any(concepto in column for concepto in conceptos):
+            original_col = column  
+            
+            if "pre_" in column:
+                col = column.replace("pre_", "pre-")
+            
+            # Split the column name and re organize
+            col_parts = column.split("_")
+
+            if len(col_parts) == 2:
+                new_name = col_parts[1] + "_" + col_parts[0]
+            elif len(col_parts) > 2:
+                new_name = "_".join([col_parts[1], col_parts[0]] + col_parts[2:])
+            else:
+                new_name = column  
+            
+            # Store the new name belonging to the original one
+            name_mapping[original_col] = new_name
+        else:
+            # If we have non-numeric cols (Those who doesn't have conceptos)
+            # Then we save it like it is
+            name_mapping[col] = col
+    
+    return name_mapping
+    
 def consolidate_final_df(new_df, hist_df):
 
     print("\n[INFO] Starting: Some transformations before melting...")
@@ -450,8 +485,9 @@ def consolidate_final_df(new_df, hist_df):
 
     for col in new_df.columns:
 
+        # If we match the column name in the dict keys:
         if col in change_new_column_names:
-            # Here we replace the name by the old name
+            
             old_column_name = change_new_column_names[col].lower().replace(" ","_").replace(".","_")
             new_names_list.append(old_column_name)
         else:
@@ -460,40 +496,9 @@ def consolidate_final_df(new_df, hist_df):
     # Stablish the new column names
     new_df.columns = new_names_list
     # Change column names of numeric columns
-    name_mapping = {}
-
-    conceptos = [
-        "aprobado", "modificado", "pre_comprometido",
-        "comprometido", "devengado", "saldo","ejercido","pagado"
-    ]
-
-    for col in new_df.columns:
-        
-        # Check if the column has some of the concepts in it and is not 'pre_modificado'
-        if any(concepto in col for concepto in conceptos) and "pre_modificado" not in col:
-            original_col = col  
-            
-            if "pre_" in col:
-                col = col.replace("pre_", "pre-")
-            
-            # Split the column name and re organize
-            col_parts = col.split("_")
-
-            if len(col_parts) == 2:
-                new_name = col_parts[1] + "_" + col_parts[0]
-            elif len(col_parts) > 2:
-                new_name = "_".join([col_parts[1], col_parts[0]] + col_parts[2:])
-            else:
-                new_name = col  
-            
-            # Store the new name belonging to the original one
-            name_mapping[original_col] = new_name
-        else:
-            # If we have non-numeric cols (Those who doesn't have conceptos)
-            # Then we save it like it is
-            name_mapping[col] = col
-    
+    name_mapping = rename_numeric_columns(new_names_list)
     # Stablish the new column names for second time
+    # By doing this, the numeric columns in new_df and hist_df can match
     new_df.rename(columns=name_mapping, inplace=True)
 
     # Filter the columns we are not interested in
@@ -508,33 +513,25 @@ def consolidate_final_df(new_df, hist_df):
         if col not in unnecessary_column_names:
             relevant_columns.append(col)
     
-    ejercido_pagado_cols = [
+    hist_df = hist_df[relevant_columns]
+
+    extra_columns_for_new_df = [
         col for col in new_df.columns 
-        if ("pagado" in col or "ejercido" in col) 
+        if ("pagado" in col or "ejercido" in col or "pre-modificado" in col) 
         and ("acum" not in col)
     ]
 
-    relevant_columns = relevant_columns + ejercido_pagado_cols 
-    # TODO checar el rubro_1, que esta en hist df y el nombre_nup
-    # TODO por lo mientras estas columnas se descartaran
+    cols_for_new_df = relevant_columns + extra_columns_for_new_df 
 
-    cols_for_hist_df = [
-        col for col in relevant_columns 
-        if ("ejercido" not in col) and ("pagado" not in col) and
-        col not in ["informe"]
-    ]
-
-    hist_df = hist_df[cols_for_hist_df]
-    
     # Concatenate both dataframes
     full_df = pd.concat(
-        [hist_df[hist_df.año != "2024"], new_df[relevant_columns]],
+        [hist_df[hist_df.año != "2024"], new_df[cols_for_new_df]],
         ignore_index=True
     )
 
     # Create a melt dataframe
-    # The id vars are those with no numbers
-    pattern = re.compile('aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado')
+    # The id vars are the non-numeric columns
+    pattern = re.compile('aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado|pre-modificado')
     id_vars = [col for col in full_df.columns if not pattern.search(col)]
     value_vars = list(set(full_df.columns) - set(id_vars))
 
@@ -576,6 +573,9 @@ def consolidate_final_df(new_df, hist_df):
     
     gc.collect()
     print("[INFO] Finished: Some transformations before melting")
+    print("😎"*30)
+    print("🤡"*30)
+    print(df_melted.columns)
     return df_melted
 
 def operations_in_complete_df(df_melted, external_data_dict):
@@ -610,6 +610,9 @@ def dimensional_creator(df_melted):
     
     # dim_momento
     unique_momento = df_melted["momento"].unique()
+    print("😎"*30)
+    print("🤡"*30)
+    print(unique_momento)
     dict_momento = {
         momento: id_ for momento, id_ in zip(
             unique_momento, 

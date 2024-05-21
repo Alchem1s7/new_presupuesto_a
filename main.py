@@ -17,7 +17,6 @@ pd.set_option("display.max_columns", None)
 
 def connect_to_data_sources():
     
-    print("\n[INFO] Starting: connect_to_data_sources...")
     # Main paths
     project_path = input("Hello. Please enter the project path: \n")
     postgres_pass = input("Hello. Please enter the db password: \n")
@@ -25,6 +24,7 @@ def connect_to_data_sources():
     hist_path = os.path.join(main_sources_path, "hist.csv")
     new_path = os.path.join(main_sources_path, "new.csv")
     dimensions_path = os.path.join(project_path, "dimension_sources")
+    print("\n[INFO] Starting: connect_to_data_sources...")
 
     # Dimension paths
     rules_path = os.path.join(dimensions_path, "reglas_transicion.csv")
@@ -38,6 +38,7 @@ def connect_to_data_sources():
     clas_admin_path = os.path.join(dimensions_path, "clas_admin.csv")
     clasiff_path = os.path.join(dimensions_path, "clasif_ff.csv")
     informe_path = os.path.join(dimensions_path, "informe_de_gobierno.csv")
+    informe_cc_hist_path = os.path.join(dimensions_path, "cc_informe.csv")
 
     # Gather all paths in one dict
     connections_dict = {
@@ -55,7 +56,8 @@ def connect_to_data_sources():
         "clas_admin":clas_admin_path,
         "clasiff":clasiff_path,
         "postgres_pass":postgres_pass,
-        "informe":informe_path
+        "informe":informe_path,
+        "informe_cc_hist":informe_cc_hist_path
     }
 
     print("[INFO] Finished: connect_to_data_sources")
@@ -229,6 +231,9 @@ def informe_de_gobierno(row, mapping_dicts):
         extracted_char = row['cadena_siafeq'][40]
         result = mapping_dicts['cadena_siafeq'].get(extracted_char)
     
+    if result is None:
+        result = mapping_dicts["informe_cc_hist"].get(row["cve_nue"])
+    
     return result
 
 def mapping_columns(new_df, connections_dict):
@@ -246,7 +251,8 @@ def mapping_columns(new_df, connections_dict):
         "dim_nup" : pd.read_csv(connections_dict["nup"], dtype=str, usecols=["Clave Rubro","Rubro","Clave NUP","NUP"]),
         "clas_admin_dim" : pd.read_csv(connections_dict["clas_admin"],dtype=str, usecols=["CLAVE","ENTIDAD"]),
         "clasifff_dim" : pd.read_csv(connections_dict["clasiff"], dtype=str, usecols=["FUENTE DE FINANCIAMIENTO","Nombre FF SIAFEQ"]),
-        "informe_dim" : pd.read_csv(connections_dict["informe"], dtype=str).dropna().reset_index(drop=True)
+        "informe_dim" : pd.read_csv(connections_dict["informe"], dtype=str).dropna().reset_index(drop=True),
+        "informe_cc_hist" : pd.read_csv(connections_dict["informe_cc_hist"], dtype=str)
     }
 
     
@@ -591,11 +597,13 @@ def operations_in_complete_df(df_melted, external_data_dict):
     
     # Informe
     mapping_dicts = {
-        'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), # correct
-        'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(), # correct
-        'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(), # TODO kjdskdjs nombre dependenciagg
-        'cadena_siafeq': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict()  
+        'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), 
+        'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(),
+        'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(),
+        'cadena_siafeq': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict(),
+        "informe_cc_hist" : external_data_dict["informe_cc_hist"].set_index('CC')['Informe'].to_dict()
     }
+
     df_melted['informe'] = df_melted.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
     df_melted['informe'] = df_melted['informe'].str.upper()
 

@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 import os
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, DateTime, ForeignKey, text
-from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime
 import re
 import time
 import gc
@@ -225,11 +223,13 @@ def informe_de_gobierno(row, mapping_dicts):
         result = mapping_dicts['cve_nue'].get(row['cve_nue'])
     
     if result is None:
-        result = mapping_dicts['nombre_dependencia'].get(row['nombre_dependencia'])
-    
+        dict_nombre_srio = mapping_dicts["nue_sin_oya"]
+        nombre_srio = dict_nombre_srio.get(row["nue_sin_oya"])
+        result = mapping_dicts['nombre_dependencia'].get(nombre_srio)
+
     if result is None:
-        extracted_char = row['cadena_siafeq'][40]
-        result = mapping_dicts['cadena_siafeq'].get(extracted_char)
+        extracted_char = row['cve_a/s']
+        result = mapping_dicts['cve_a/s'].get(extracted_char)
     
     if result is None:
         result = mapping_dicts["informe_cc_hist"].get(row["cve_nue"])
@@ -457,7 +457,7 @@ def rename_numeric_columns(new_df_cols):
     
 def consolidate_final_df(new_df, hist_df):
 
-    print("\n[INFO] Starting: Some transformations before melting...")
+    print("\n[INFO] Starting: Melting dataframe...")
 
     
     change_new_column_names = {
@@ -578,33 +578,30 @@ def consolidate_final_df(new_df, hist_df):
     df_melted.drop(columns=["mes", "mes_y_momento"], inplace=True)
     
     gc.collect()
-
+    print("[INFO] Finishing: Melting dataframe")
     return df_melted
 
 def operations_in_complete_df(df_melted, external_data_dict):
     print("\n[INFO] Starting: Operations in concatenated dataframe")
-    columns_dict = {}
     
     # Nombre dependencia
     df_melted["nombre_dependencia"] = df_melted["nombre_nue"].map(
         external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict()
     )
 
-
-    
     # Informe
     mapping_dicts = {
         'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), 
         'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(),
+        'nue_sin_oya': external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict(),
         'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(),
-        'cadena_siafeq': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict(),
+        'cve_a/s': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict(),
         "informe_cc_hist" : external_data_dict["informe_cc_hist"].set_index('CC')['Informe'].to_dict()
     }
 
     df_melted["cve_nue"] = df_melted["cve_nue"].str.strip()
     df_melted['informe'] = df_melted.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
     df_melted['informe'] = df_melted['informe'].str.upper()
-
 
     gc.collect()
     print("[INFO] Finishing: Operations in concatenated dataframe")

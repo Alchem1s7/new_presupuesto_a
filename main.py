@@ -218,7 +218,7 @@ def map_columns_using_dict(dim_df, df, dim_cols_dict, df_cols_dict):
 
 
 def informe_de_gobierno(row, mapping_dicts):
-    # Intentar buscar en los diferentes rangos especificados
+    
     result = mapping_dicts['ff'].get(row['ff'])
     
     if result is None:
@@ -506,7 +506,6 @@ def consolidate_final_df(new_df, hist_df):
     # Stablish the new column names for second time
     # By doing this, the numeric columns in new_df and hist_df can match
     new_df.rename(columns=name_mapping, inplace=True)
-    print(name_mapping)
     # Filter the columns we are not interested in
     relevant_columns = []
     unnecessary_column_names = [
@@ -566,22 +565,20 @@ def consolidate_final_df(new_df, hist_df):
         "noviembre":"11",
         "diciembre":"12"
     }
+    
+    df_melted["cantidad"] = pd.to_numeric(df_melted["cantidad"], errors="raise")
+    df_melted = df_melted[(df_melted.cantidad != 0) & (df_melted.cantidad.notna())].copy()
+    df_melted["año"] = pd.to_numeric(df_melted["año"], errors="raise")
 
     df_melted["fecha"] = pd.NA
     df_melted["mes"] = df_melted["mes"].str.strip()
-    df_melted["fecha"] = "01/" + df_melted["mes"].map(dict_to_map_months) + "/" + df_melted["año"]
+    df_melted["fecha"] = "01/" + df_melted["mes"].map(dict_to_map_months) + "/" + df_melted["año"].astype(str)
     df_melted["fecha"] = pd.to_datetime(df_melted["fecha"], dayfirst=True)
-
-    df_melted["cantidad"] = pd.to_numeric(df_melted["cantidad"], errors="raise")
-    df_melted["año"] = pd.to_numeric(df_melted["año"], errors="raise")
 
     df_melted.drop(columns=["mes", "mes_y_momento"], inplace=True)
     
     gc.collect()
-    print("[INFO] Finished: Some transformations before melting")
-    print("😎"*30)
-    print("🤡"*30)
-    print(df_melted.columns)
+
     return df_melted
 
 def operations_in_complete_df(df_melted, external_data_dict):
@@ -604,8 +601,10 @@ def operations_in_complete_df(df_melted, external_data_dict):
         "informe_cc_hist" : external_data_dict["informe_cc_hist"].set_index('CC')['Informe'].to_dict()
     }
 
+    df_melted["cve_nue"] = df_melted["cve_nue"].str.strip()
     df_melted['informe'] = df_melted.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
     df_melted['informe'] = df_melted['informe'].str.upper()
+
 
     gc.collect()
     print("[INFO] Finishing: Operations in concatenated dataframe")
@@ -626,9 +625,7 @@ def dimensional_creator(df_melted):
     
     # dim_momento
     unique_momento = df_melted["momento"].unique()
-    print("😎"*30)
-    print("🤡"*30)
-    print(unique_momento)
+
     dict_momento = {
         momento: id_ for momento, id_ in zip(
             unique_momento, 

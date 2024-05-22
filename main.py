@@ -5,6 +5,7 @@ import os
 import re
 import time
 import gc
+import logging
 
 from sqlalchemy import (
     create_engine, 
@@ -25,6 +26,7 @@ from auxiliar_functions import (
     rename_numeric_columns,
     psql_insert_copy
 )
+logging.basicConfig(level=logging.INFO)
 
 # Functions for the ETL:
 
@@ -402,15 +404,12 @@ def mapping_columns(new_df, connections_dict):
     }
 
     dependent_columns_dict['informe'] = new_df.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
+    dependent_columns_dict["informe"] = dependent_columns_dict["informe"].apply(lambda x: x.split(".")[1] if len(x.split(".")) > 1 else x)
 
     # concatenate new columns all at once
     dependent_columns_df = pd.DataFrame(dependent_columns_dict)
     new_df = pd.concat([new_df, dependent_columns_df], axis=1)
-    print("😎"*30)
-    print("🤡"*30)
-    print(new_df.columns)
-    print("😎"*30)
-    print("🤡"*30)
+
     gc.collect()
     print("[INFO] Finished: Mapping columns with external data")
     return new_df, external_data_dict
@@ -476,7 +475,7 @@ def consolidate_final_df(new_df, hist_df):
     ] 
 
     for col in hist_df.columns:
-        print(col)
+
         if col not in unnecessary_column_names:
             relevant_columns.append(col)
     
@@ -572,19 +571,17 @@ def dimensional_creator(df_melted):
     df_melted["id_momento"] = df_melted["momento"].map(dict_momento)
     df_melted.drop(columns=["momento"], inplace=True)
 
+    df_melted = df_melted.apply(lambda col: col.str.strip().str.title() if col.dtype == 'object' else col)
     # Bucle principal
     for dim_name, cols in dim_defs.items():
 
         print(f"[INFO] Iniciando: {dim_name}")
         dim_table = df_melted[cols].drop_duplicates().reset_index(drop=True)
 
+
         # Tabla hash para asignar IDs enteros
         id_map = {tuple(row): i + 1 for i, row in dim_table.iterrows()}
-        
-        if dim_name == "dim_tipo_gasto":
-            id_col = "id_tipogasto"
-        else:
-            id_col = f"id_{dim_name.split('_')[1]}"  
+        id_col = f"id_{dim_name.split('_')[1]}"  
 
         # Crear la tabla dimensional con IDs enteros
         dim_table[id_col] = dim_table.apply(tuple, axis=1).map(id_map)
@@ -601,30 +598,46 @@ def dimensional_creator(df_melted):
     return dim_tables_dict, df_melted
 
 
+def get_tables(engine):
+    """Fetches and returns a sorted list of tables from the database."""
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    return metadata.sorted_tables
+
+
 def drop_all_tables(conn_dict):
-    print("\n[INFO] Starting: Dropping all tables in the database...")
+    logging.info("Starting: Dropping all tables in the database...")
+    try:
+        passw = conn_dict['postgres_pass']
+        engine = create_engine(
+            f"postgresql+psycopg2://postgres:{passw}@localhost:5432/new_pa"
+        )
 
-    passw = conn_dict["postgres_pass"]
-    engine = create_engine(
-        f"postgresql+psycopg2://postgres:{passw}@localhost:5432/new_pa"
-    )
+        sorted_tables = get_tables(engine)
+        if not sorted_tables:
+            logging.info("No tables found to drop.")
+            return engine
 
-    with engine.begin() as connection:
-        # Get all table names
-        connection.execute(text("""
-            DO $$ DECLARE
-            r RECORD;
-            BEGIN
-                -- dynamic SQL statement for dropping all tables
-                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP
-                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-                END LOOP;
-            END $$;
-        """))
-        connection.commit()
+        for table in reversed(sorted_tables):
+            logging.info(f"Dropping table: {table.name}")
+            try:
+                table.drop(engine, checkfirst=True)
+            except Exception as e:
+                logging.error(f"Error dropping table {table.name}: {e}")
         
-    print("[INFO] Finishing: Dropping all tables in the database")
-    return engine
+        # Final verification
+        sorted_tables = get_tables(engine)
+        if sorted_tables:
+            logging.error("Not all tables were dropped successfully.")
+            raise Exception("Table drop operation failed.")
+        else:
+            logging.info("All tables have been dropped successfully.")
+
+        return engine
+
+    except Exception as e:
+        logging.critical(f"An error occurred: {e}")
+        raise 
 
 
 def dimensionals_creator_on_sql(conn_dict):

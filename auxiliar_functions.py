@@ -4,16 +4,18 @@ import pandas as pd
 import csv
 from io import StringIO
 
+
 def optimize_columns(df):
-        pattern = re.compile('aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado')
-        columns_to_convert = [col for col in df.columns if pattern.search(col)]
 
-        for col in columns_to_convert:
+    pattern = re.compile('aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado')
+    columns_to_convert = [col for col in df.columns if pattern.search(col)]
 
-            df[col] = df[col].str.replace(',', '').astype(float)
-            df[col] = pd.to_numeric(df[col], errors='raise', downcast="float")
+    for col in columns_to_convert:
 
-        return df
+        df[col] = df[col].str.replace(',', '').astype(float)
+        df[col] = pd.to_numeric(df[col], errors='raise', downcast="float")
+
+    return df
 
 
 def map_columns_using_dict(dim_df, df, dim_cols_dict, df_cols_dict):
@@ -29,6 +31,7 @@ def map_columns_using_dict(dim_df, df, dim_cols_dict, df_cols_dict):
 
     new_series = df[map_in_col].map(dict_to_map)
     gc.collect()
+
     return new_series
 
 
@@ -89,7 +92,6 @@ def rename_numeric_columns(new_df_cols):
             name_mapping[column] = column
     
     return name_mapping
-
 
 
 def psql_insert_copy(table, conn, keys, data_iter):

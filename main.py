@@ -34,8 +34,8 @@ def connect_to_data_sources():
     project_path = input("Hello. Please enter the project path: \n")
     postgres_pass = input("Hello. Please enter the db password: \n")
     main_sources_path = os.path.join(project_path, "main_sources")
-    hist_path = os.path.join(main_sources_path, "hist.csv")
-    new_path = os.path.join(main_sources_path, "new.csv")
+    hist_path = os.path.join(main_sources_path, "hist_abril.csv")
+    new_path = os.path.join(main_sources_path, "new_abril.csv")
     dimensions_path = os.path.join(project_path, "dimension_sources")
     print("\n[INFO] Starting: connect_to_data_sources...")
 
@@ -83,7 +83,7 @@ def main_data_consolidation(connections_dict:dict):
     # Historical data
     hist_df = pd.read_csv(connections_dict["hist"], dtype=str)
     hist_df.columns = [i.lower().replace(" ","_").replace(".","_") for i in hist_df.columns]
-    hist_df.rename(columns={"rubro":"rubro_nup","rubro_1":"rubro"}, inplace=True)
+    hist_df.rename(columns={"rubro":"rubro_nup","proyecto_2":"rubro","proyecto":"nombre_nup"}, inplace=True)
 
     # New data version
     new_df = pd.read_csv(connections_dict["new"], dtype=str)
@@ -226,62 +226,62 @@ def mapping_columns(new_df, connections_dict):
 
     
     # Transformations using a dictionary
-    derived_columns = {}
+    independient_columns_dict = {}
 
     # Federal/estatal
     federal_estatal_mask = new_df.conac2.str.lower().str.contains("federal", na=False)
-    derived_columns["federal/estatal"] = federal_estatal_mask.map({True:"FEDERAL", False:"ESTATAL"})
+    independient_columns_dict["federal/estatal"] = federal_estatal_mask.map({True:"FEDERAL", False:"ESTATAL"})
 
     # cve año
-    derived_columns["cve_año"] = new_df["año_ff"].str[-2:]
+    independient_columns_dict["cve_año"] = new_df["año_ff"].str[-2:]
     
     #cve ramo
-    derived_columns["cve_ramo"] = new_df["cff_n4"].str[-2:]
+    independient_columns_dict["cve_ramo"] = new_df["cff_n4"].str[-2:]
 
     # cve fondo
-    derived_columns["cve_fondo"] = new_df.cff_n5.str[-3:]
+    independient_columns_dict["cve_fondo"] = new_df.cff_n5.str[-3:]
 
     # cve origen
-    derived_columns["cve_origen"] = new_df.ff.str[-1]
+    independient_columns_dict["cve_origen"] = new_df.ff.str[-1]
 
     # estatus
     pe9_mask = new_df.cve_prog.str.lower().str.startswith("pe9")
-    derived_columns["estatus"] = pe9_mask.map({True:"NO ASIGNADO",False:"ASIGNADO"})
+    independient_columns_dict["estatus"] = pe9_mask.map({True:"NO ASIGNADO",False:"ASIGNADO"})
 
     # direccion
 
     first_dict_direccion = external_data_dict["dim_nue"].set_index("Depto.")["Agrupado en:"].to_dict()
     second_dict_direccion = external_data_dict["dim_nue"].set_index("Depto.")["DESCRIPCION"].to_dict()
 
-    derived_columns["direccion"] = new_df["cve_nue"].map(first_dict_direccion)
-    derived_columns["direccion"] = derived_columns["direccion"].map(second_dict_direccion)
+    independient_columns_dict["direccion"] = new_df["cve_nue"].map(first_dict_direccion)
+    independient_columns_dict["direccion"] = independient_columns_dict["direccion"].map(second_dict_direccion)
 
     # entidad gs
     mask_entidadgs = new_df.cadena_siafeq.str.startswith("03")
-    derived_columns["entidad_gs"] = new_df.cve_adm.copy()
-    derived_columns["entidad_gs"].loc[mask_entidadgs] = "OBRAS Y ACCIONES"
+    independient_columns_dict["entidad_gs"] = new_df.cve_adm.copy()
+    independient_columns_dict["entidad_gs"].loc[mask_entidadgs] = "OBRAS Y ACCIONES"
 
     dict_to_map_entidad_gs = external_data_dict["clas_admin_dim"].set_index("CLAVE")["ENTIDAD"].to_dict()
-    derived_columns["entidad_gs"].loc[~mask_entidadgs] = derived_columns["entidad_gs"].map(dict_to_map_entidad_gs)
+    independient_columns_dict["entidad_gs"].loc[~mask_entidadgs] = independient_columns_dict["entidad_gs"].map(dict_to_map_entidad_gs)
 
     # rubro
     mask_cadena_siafeq = new_df.cadena_siafeq.str.startswith("03")
     mask_cogn2 = new_df.cog_n2.str.startswith("45")
 
-    derived_columns["rubro"] = pd.Series(pd.NA, index=new_df.index)
-    derived_columns["rubro"].loc[mask_cadena_siafeq] = "OBRAS Y ACCIONES"
-    derived_columns["rubro"].loc[mask_cogn2] = "JUBILADOS Y PENSIONADOS"
+    independient_columns_dict["rubro"] = pd.Series(pd.NA, index=new_df.index)
+    independient_columns_dict["rubro"].loc[mask_cadena_siafeq] = "OBRAS Y ACCIONES"
+    independient_columns_dict["rubro"].loc[mask_cogn2] = "JUBILADOS Y PENSIONADOS"
 
     dict_to_map_rubro = external_data_dict["dim_nup"].set_index("Clave Rubro")["Rubro"].to_dict()
-    derived_columns["rubro"].loc[~mask_cadena_siafeq & ~mask_cogn2] = new_df.cve_nup.str[2].map(dict_to_map_rubro)
+    independient_columns_dict["rubro"].loc[~mask_cadena_siafeq & ~mask_cogn2] = new_df.cve_nup.str[2].map(dict_to_map_rubro)
 
 
     # año
-    derived_columns["año"] = pd.Series("2024", index=new_df.index)
+    independient_columns_dict["año"] = pd.Series("2024", index=new_df.index)
 
     
     # entidad
-    derived_columns["entidad_"] = map_columns_using_dict(
+    independient_columns_dict["entidad_"] = map_columns_using_dict(
         external_data_dict["dim_clasif_urg"], 
         new_df,
         {"CVE U.R.G":"ENTIDAD"},
@@ -289,7 +289,7 @@ def mapping_columns(new_df, connections_dict):
     )
 
     # nombre nue
-    derived_columns["nombre_nue"] = map_columns_using_dict(
+    independient_columns_dict["nombre_nue"] = map_columns_using_dict(
         external_data_dict["dim_nue"], 
         new_df,
         {"Depto.":"Agrupa dep"},
@@ -297,26 +297,26 @@ def mapping_columns(new_df, connections_dict):
     )
 
     # nue sin oya
-    derived_columns["nue_sin_oya"] = map_columns_using_dict(
+    independient_columns_dict["nue_sin_oya"] = map_columns_using_dict(
         external_data_dict["new_dim_nue"], 
         new_df,
         {"NUE5":"DEP. EJECUTORA"},
         {"nue_sin_oya":"cve_nue"}
     )
     
-    if derived_columns["nue_sin_oya"].hasnans:
+    if independient_columns_dict["nue_sin_oya"].hasnans:
 
-        nues_without_oya = new_df.loc[derived_columns["nue_sin_oya"].isna(), "cve_nue"].unique()
+        nues_without_oya = new_df.loc[independient_columns_dict["nue_sin_oya"].isna(), "cve_nue"].unique()
         
         for nue in nues_without_oya:
 
             aff = external_data_dict["new_dim_nue"][external_data_dict["new_dim_nue"]["NUE5"] == nue]["Afectable"].values[0]
             dep = external_data_dict["new_dim_nue"][external_data_dict["new_dim_nue"]["NUE5"] == aff]["DEP. EJECUTORA"].values[0]
             #new_df.loc[(new_df.nue_sin_oya.isna()) & (new_df.cve_nue == nue), "nue_sin_oya"] = dep
-            derived_columns["nue_sin_oya"].loc[(derived_columns["nue_sin_oya"].isna()) & (new_df["cve_nue"] == nue)] = dep
+            independient_columns_dict["nue_sin_oya"].loc[(independient_columns_dict["nue_sin_oya"].isna()) & (new_df["cve_nue"] == nue)] = dep
 
     # concepto ef
-    derived_columns["concepto_ef"] = map_columns_using_dict(
+    independient_columns_dict["concepto_ef"] = map_columns_using_dict(
         external_data_dict["dim_clasf_og"], 
         new_df,
         {"COG2":"CONCEPTO EF"},
@@ -324,33 +324,34 @@ def mapping_columns(new_df, connections_dict):
     )
 
     # proyecto 3
-    derived_columns["proyecto3"] = map_columns_using_dict(
+    independient_columns_dict["proyecto3"] = map_columns_using_dict(
         external_data_dict["dim_nup"],
         new_df,
         {"Clave NUP":"Rubro"},
         {"proyecto3":"cve_nup"}
     )
-    derived_columns["proyecto3"] = derived_columns["proyecto3"].str.strip()
+    independient_columns_dict["proyecto3"] = independient_columns_dict["proyecto3"].str.strip()
 
     # proyecto new
-    derived_columns["proyecto_new"] = map_columns_using_dict(
+    independient_columns_dict["proyecto_new"] = map_columns_using_dict(
         external_data_dict["dim_nup"],
         new_df,
         {"Clave NUP":"NUP"},
         {"proyecto_new":"cve_nup"}
     )
-    derived_columns["proyecto_new"].loc[derived_columns["proyecto_new"].isna()] = new_df["proyecto_2"]
-    derived_columns["proyecto_new"] = derived_columns["proyecto_new"].str.strip()
+    independient_columns_dict["proyecto_new"].loc[independient_columns_dict["proyecto_new"].isna()] = new_df["proyecto_2"]
+    independient_columns_dict["proyecto_new"] = independient_columns_dict["proyecto_new"].str.strip()
 
     # nombre ff
-    derived_columns["nombre_ff"] = map_columns_using_dict(
+    independient_columns_dict["nombre_ff"] = map_columns_using_dict(
         external_data_dict["clasifff_dim"],
         new_df,
         {"FUENTE DE FINANCIAMIENTO":"Nombre FF SIAFEQ"},
         {"nombre_ff":"ff"}
     )
-    derived_columns_df = pd.DataFrame(derived_columns)
-    new_df = pd.concat([new_df, derived_columns_df], axis=1)
+
+    independient_cols_df = pd.DataFrame(independient_columns_dict)
+    new_df = pd.concat([new_df, independient_cols_df], axis=1)
 
     # Second dataframe concatenation
     # We use the same approach but now, with the dependent columns ------------------------------------
@@ -364,6 +365,7 @@ def mapping_columns(new_df, connections_dict):
         {"CVE RAMO":"RAMO2"},
         {"ramo2":"cve_ramo"}
     )
+
     # origen 
     dependent_columns_dict["origen1"] = map_columns_using_dict(
         external_data_dict["dim_ff"], 
@@ -371,6 +373,7 @@ def mapping_columns(new_df, connections_dict):
         {"CVE ORIGEN":"ORIGEN"},
         {"origen1":"cve_origen"}
     )
+
     # Sector
     sector_mask = new_df.cve_nue.str.startswith("PE9")
     sector_series = pd.Series(pd.NA, index=new_df.index)
@@ -380,10 +383,34 @@ def mapping_columns(new_df, connections_dict):
     sector_series.loc[~sector_mask] = new_df["nue_sin_oya"].map(dict_to_map_nue_sector)
     dependent_columns_dict["sector1"] = sector_series
 
+    # Nombre dependencia
+    #dependent_columns_dict["nombre_dependencia"] = map_columns_using_dict(
+    #    external_data_dict["dim_prep"], 
+    #    new_df,
+    #    {"Agrupador":"Nombre reporte Srio."},
+    #    {"nombre_dependencia":"nombre_nue"}
+    #)
+    
+    # Informe
+    mapping_dicts = {
+        'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), 
+        'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(),
+        'nue_sin_oya': external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict(),
+        'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(),
+        'cve_a/s': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict(),
+        "informe_cc_hist" : external_data_dict["informe_cc_hist"].set_index('CC')['Informe'].to_dict()
+    }
+
+    dependent_columns_dict['informe'] = new_df.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
+
     # concatenate new columns all at once
     dependent_columns_df = pd.DataFrame(dependent_columns_dict)
     new_df = pd.concat([new_df, dependent_columns_df], axis=1)
-
+    print("😎"*30)
+    print("🤡"*30)
+    print(new_df.columns)
+    print("😎"*30)
+    print("🤡"*30)
     gc.collect()
     print("[INFO] Finished: Mapping columns with external data")
     return new_df, external_data_dict
@@ -417,7 +444,7 @@ def consolidate_final_df(new_df, hist_df):
         "entidad_gs": "ENTIDAD GS"
     }
     
-    new_df.drop(columns=["sector","proyecto"], inplace=True)
+    new_df.drop(columns=["sector"], inplace=True)
 
     # Change the column names of the columns created by mapping
     # We change the column names by the old ones
@@ -449,6 +476,7 @@ def consolidate_final_df(new_df, hist_df):
     ] 
 
     for col in hist_df.columns:
+        print(col)
         if col not in unnecessary_column_names:
             relevant_columns.append(col)
     
@@ -457,8 +485,8 @@ def consolidate_final_df(new_df, hist_df):
     extra_columns_for_new_df = [
         col for col in new_df.columns 
         if ("pagado" in col or "ejercido" in col or "pre-modificado" in col) 
-        and ("acum" not in col)
-    ]
+        and ("acum" not in col) 
+    ] #+ ["informe"]
 
     cols_for_new_df = relevant_columns + extra_columns_for_new_df 
 
@@ -515,42 +543,18 @@ def consolidate_final_df(new_df, hist_df):
     print("[INFO] Finishing: Melting dataframe")
     return df_melted
 
-def operations_in_complete_df(df_melted, external_data_dict):
-    print("\n[INFO] Starting: Operations in concatenated dataframe")
-    
-    # Nombre dependencia
-    df_melted["nombre_dependencia"] = df_melted["nombre_nue"].map(
-        external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict()
-    )
-
-    # Informe
-    mapping_dicts = {
-        'ff': external_data_dict["informe_dim"].iloc[86:104].set_index('Clasificador')['Informe'].to_dict(), 
-        'cve_nue': external_data_dict["informe_dim"].iloc[104:].set_index('Clasificador')['Informe'].to_dict(),
-        'nue_sin_oya': external_data_dict["dim_prep"].set_index("Agrupador")["Nombre reporte Srio."].to_dict(),
-        'nombre_dependencia': external_data_dict["informe_dim"].set_index('Clasificador')['Informe'].to_dict(),
-        'cve_a/s': external_data_dict["informe_dim"].iloc[84:86].set_index('Clasificador')['Informe'].to_dict(),
-        "informe_cc_hist" : external_data_dict["informe_cc_hist"].set_index('CC')['Informe'].to_dict()
-    }
-
-    df_melted["cve_nue"] = df_melted["cve_nue"].str.strip()
-    df_melted['informe'] = df_melted.apply(informe_de_gobierno, axis=1, mapping_dicts=mapping_dicts)
-    df_melted['informe'] = df_melted['informe'].str.upper()
-
-    gc.collect()
-    print("[INFO] Finishing: Operations in concatenated dataframe")
-    return df_melted
-
 
 def dimensional_creator(df_melted):
     print("\n[INFO] Starting: Creation of dimensional dataframes...")
     
     dim_defs = {
         "dim_tipogasto": ['cve_cog','capítulo','concepto','part__genérica','part__específica','cve_tg','tipo_de_gasto','rubro'],
-        "dim_fuente": ['ff','cve_conac1','conac1','cve_conac2','conac2','federal_/_estatal','cve_año','año_ff','cve_ramo','ramo','origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp'],
+        "dim_fuente": [
+            'ff','cve_conac1','conac1','cve_conac2','conac2','federal_/_estatal','cve_año','año_ff','cve_ramo','ramo',
+            'origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp'],
         "dim_programa": ['cve_prog','prog','cve_fun','finalidad','función','sub__función','cve_a/s','a/s','cve_pedq','pedq'],
         "dim_entidad": ['cve_urg', 'urg', 'cve_adm', 'adm', 'entidad', 'entidad_2', 'entidad_gs'],
-        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección',"nombre_dependencia"],
+        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección'],#,"nombre_dependencia"],
         "dim_proyecto": ["cve_nup","nombre_nup","rubro_nup","concepto_ef","informe"]
     }
     
@@ -689,7 +693,7 @@ def dimensionals_creator_on_sql(conn_dict):
         Column('nue_sin_oya', String(255)),
         Column('sector', String(255)),
         Column('dirección', String(255)),
-        Column('nombre_dependencia', String(255)),
+        #Column('nombre_dependencia', String(255)),
         extend_existing=True
     )
 
@@ -797,6 +801,7 @@ def loading_data(engine, dimension_tables_dict):
 
 
 def workflow():
+
     start_time = time.time()
     # Connect to data sources
     conn_dict = connect_to_data_sources()
@@ -837,14 +842,6 @@ def workflow():
     
     del new_df # Free memory
 
-    # Operations that affect the entire
-    # dataframe, this for columns to not only have values of 2024
-    # but also values from the past years
-    
-    df_melt = operations_in_complete_df(
-        df_melted=df_melt,
-        external_data_dict=external_data_dict
-    )
     # Creation of dimensional tables 
     dim_tables_dict, df_melt = dimensional_creator(
         df_melted=df_melt

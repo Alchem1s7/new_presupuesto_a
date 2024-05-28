@@ -54,6 +54,8 @@ def connect_to_data_sources():
     clasiff_path = os.path.join(dimensions_path, "clasif_ff.csv")
     informe_path = os.path.join(dimensions_path, "informe_de_gobierno.csv")
     informe_cc_hist_path = os.path.join(dimensions_path, "cc_informe.csv")
+    rubro_path = os.path.join(dimensions_path, "dim_rubro_nup.csv")
+
 
     # Gather all paths in one dict
     connections_dict = {
@@ -72,7 +74,8 @@ def connect_to_data_sources():
         "clasiff":clasiff_path,
         "postgres_pass":postgres_pass,
         "informe":informe_path,
-        "informe_cc_hist":informe_cc_hist_path
+        "informe_cc_hist":informe_cc_hist_path,
+        "rubro_nup":rubro_path
     }
 
     print("[INFO] Finished: connect_to_data_sources")
@@ -85,7 +88,12 @@ def main_data_consolidation(connections_dict:dict):
     # Historical data
     hist_df = pd.read_csv(connections_dict["hist"], dtype=str)
     hist_df.columns = [i.lower().replace(" ","_").replace(".","_") for i in hist_df.columns]
-    hist_df.rename(columns={"rubro":"rubro_nup","proyecto_2":"rubro","proyecto":"nombre_nup"}, inplace=True)
+    hist_df.rename(
+        columns={
+            "proyecto_2":"rubro_nup",
+            "proyecto":"nombre_nup"
+        }, inplace=True
+    )
 
     # New data version
     new_df = pd.read_csv(connections_dict["new"], dtype=str)
@@ -136,6 +144,8 @@ def columns_expander(rules_df, new_df):
     )
 
     # Create the new columns in new_df
+    # Specific case for finalidad column:
+    new_df["cfu_n1"] = new_df["cfu_n1"] + "00" # We do this to match the data in historic dataframe
     new_columns = {}
     for old, pair in dict_pair_cols.items():
         try:
@@ -223,7 +233,8 @@ def mapping_columns(new_df, connections_dict):
         "clas_admin_dim" : pd.read_csv(connections_dict["clas_admin"],dtype=str, usecols=["CLAVE","ENTIDAD"]),
         "clasifff_dim" : pd.read_csv(connections_dict["clasiff"], dtype=str, usecols=["FUENTE DE FINANCIAMIENTO","Nombre FF SIAFEQ"]),
         "informe_dim" : pd.read_csv(connections_dict["informe"], dtype=str).dropna().reset_index(drop=True),
-        "informe_cc_hist" : pd.read_csv(connections_dict["informe_cc_hist"], dtype=str)
+        "informe_cc_hist" : pd.read_csv(connections_dict["informe_cc_hist"], dtype=str),
+        "rubro_nup_dim":pd.read_csv(connections_dict["rubro_nup"], dtype=str)
     }
 
     
@@ -266,7 +277,7 @@ def mapping_columns(new_df, connections_dict):
     dict_to_map_entidad_gs = external_data_dict["clas_admin_dim"].set_index("CLAVE")["ENTIDAD"].to_dict()
     independient_columns_dict["entidad_gs"].loc[~mask_entidadgs] = independient_columns_dict["entidad_gs"].map(dict_to_map_entidad_gs)
 
-    # rubro
+    #rubro
     mask_cadena_siafeq = new_df.cadena_siafeq.str.startswith("03")
     mask_cogn2 = new_df.cog_n2.str.startswith("45")
 
@@ -326,13 +337,13 @@ def mapping_columns(new_df, connections_dict):
     )
 
     # proyecto 3
-    independient_columns_dict["proyecto3"] = map_columns_using_dict(
-        external_data_dict["dim_nup"],
+    independient_columns_dict["rubro_nup"] = map_columns_using_dict(
+        external_data_dict["rubro_nup_dim"],
         new_df,
-        {"Clave NUP":"Rubro"},
-        {"proyecto3":"cve_nup"}
+        {"NUP":"PROYECTO 2"},
+        {"rubro_nup":"cve_nup"}
     )
-    independient_columns_dict["proyecto3"] = independient_columns_dict["proyecto3"].str.strip()
+    independient_columns_dict["rubro_nup"] = independient_columns_dict["rubro_nup"].str.strip()
 
     # proyecto new
     independient_columns_dict["proyecto_new"] = map_columns_using_dict(
@@ -341,7 +352,7 @@ def mapping_columns(new_df, connections_dict):
         {"Clave NUP":"NUP"},
         {"proyecto_new":"cve_nup"}
     )
-    independient_columns_dict["proyecto_new"].loc[independient_columns_dict["proyecto_new"].isna()] = new_df["proyecto_2"]
+    independient_columns_dict["proyecto_new"].loc[independient_columns_dict["proyecto_new"].isna()] = independient_columns_dict["rubro_nup"]
     independient_columns_dict["proyecto_new"] = independient_columns_dict["proyecto_new"].str.strip()
 
     # nombre ff
@@ -438,12 +449,12 @@ def consolidate_final_df(new_df, hist_df):
         "direccion": "DIRECCIÓN",
         "proyecto_new": "NOMBRE NUP",
         "concepto_ef": "CONCEPTO EF",
-        "proyecto3": "RUBRO_NUP",
-        "rubro": "RUBRO",
-        "entidad_gs": "ENTIDAD GS"
+        "entidad_gs": "ENTIDAD GS",
+        "finalidad1":"finalidad",
+        "concepto1":"concepto"
     }
     
-    new_df.drop(columns=["sector"], inplace=True)
+    new_df.drop(columns=["sector","finalidad","concepto"], inplace=True)
 
     # Change the column names of the columns created by mapping
     # We change the column names by the old ones
@@ -536,6 +547,17 @@ def consolidate_final_df(new_df, hist_df):
     df_melted["fecha"] = "01/" + df_melted["mes"].map(dict_to_map_months) + "/" + df_melted["año"].astype(str)
     df_melted["fecha"] = pd.to_datetime(df_melted["fecha"], dayfirst=True)
 
+    df_melted["sector"] = df_melted["sector"].replace("SECTOR","",regex=True).str.strip()
+    dict_to_replace_sector = {
+        "Desarrollo Urbano Y Obras Públicas": "Urbano y OP",
+        "De Planeación Y Participación Ciudadana":"Plan y Part Ciudadana",
+        "De La Juventud": "Juventud"
+    }
+    
+    for column in ["part__genérica","part__específica","capítulo","concepto"]:
+        df_melted[column] = df_melted[column].str.replace(r'(?<=\d)\.\s+', " ", regex=True)
+    
+    df_melted["sector"] = df_melted["sector"].replace(dict_to_replace_sector)
     df_melted.drop(columns=["mes", "mes_y_momento"], inplace=True)
     
     gc.collect()

@@ -546,18 +546,18 @@ def consolidate_final_df(new_df, hist_df):
     df_melted["mes"] = df_melted["mes"].str.strip()
     df_melted["fecha"] = "01/" + df_melted["mes"].map(dict_to_map_months) + "/" + df_melted["año"].astype(str)
     df_melted["fecha"] = pd.to_datetime(df_melted["fecha"], dayfirst=True)
-
-    df_melted["sector"] = df_melted["sector"].replace("SECTOR","",regex=True).str.strip()
+    
+    df_melted.loc[df_melted['sector'].str.startswith("SECTOR"), "sector"] = df_melted["sector"].replace("SECTOR", "", regex=True).str.strip()
     dict_to_replace_sector = {
         "Desarrollo Urbano Y Obras Públicas": "Urbano y OP",
         "De Planeación Y Participación Ciudadana":"Plan y Part Ciudadana",
         "De La Juventud": "Juventud"
     }
-    
+    df_melted["sector"] = df_melted["sector"].replace(dict_to_replace_sector)
+
     for column in ["part__genérica","part__específica","capítulo","concepto"]:
         df_melted[column] = df_melted[column].str.replace(r'(?<=\d)\.\s+', " ", regex=True)
     
-    df_melted["sector"] = df_melted["sector"].replace(dict_to_replace_sector)
     df_melted.drop(columns=["mes", "mes_y_momento"], inplace=True)
     
     gc.collect()

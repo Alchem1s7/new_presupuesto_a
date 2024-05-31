@@ -496,7 +496,7 @@ def consolidate_final_df(new_df, hist_df):
         col for col in new_df.columns 
         if ("pagado" in col or "ejercido" in col or "pre-modificado" in col) 
         and ("acum" not in col) 
-    ] + ["origen_ff"]
+    ] + ["origen_ff","dependencia"] 
 
     cols_for_new_df = relevant_columns + extra_columns_for_new_df 
 
@@ -548,6 +548,8 @@ def consolidate_final_df(new_df, hist_df):
     df_melted["fecha"] = pd.to_datetime(df_melted["fecha"], dayfirst=True)
     
     df_melted.loc[df_melted['sector'].str.startswith("SECTOR"), "sector"] = df_melted["sector"].replace("SECTOR", "", regex=True).str.strip()
+    df_melted.loc[df_melted['dependencia'].str.startswith("SECTOR",na=False), "dependencia"] = df_melted["dependencia"].replace("SECTOR", "", regex=True).str.strip()
+
     dict_to_replace_sector = {
         "Desarrollo Urbano Y Obras Públicas": "Urbano y OP",
         "De Planeación Y Participación Ciudadana":"Plan y Part Ciudadana",
@@ -575,7 +577,7 @@ def dimensional_creator(df_melted):
             'origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp',"origen_ff"],
         "dim_programa": ['cve_prog','prog','cve_fun','finalidad','función','sub__función','cve_a/s','a/s','cve_pedq','pedq'],
         "dim_entidad": ['cve_urg', 'urg', 'cve_adm', 'adm', 'entidad', 'entidad_2', 'entidad_gs'],
-        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección'],#,"nombre_dependencia"],
+        "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección',"dependencia"],
         "dim_proyecto": ["cve_nup","nombre_nup","rubro_nup","concepto_ef","informe"]
     }
     
@@ -728,7 +730,7 @@ def dimensionals_creator_on_sql(conn_dict):
         Column('nue_sin_oya', String(255)),
         Column('sector', String(255)),
         Column('dirección', String(255)),
-        #Column('nombre_dependencia', String(255)),
+        Column('dependencia', String(255)),
         extend_existing=True
     )
 
@@ -888,6 +890,8 @@ def workflow():
      
     # Appending the melt_df in the dictionary of tables to be loaded:
     dim_tables_dict["fact_gasto"] = df_melt
+
+    
 
     # Load the tables
     loading_data(

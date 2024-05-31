@@ -99,7 +99,7 @@ def main_data_consolidation(connections_dict:dict):
     new_df = pd.read_csv(connections_dict["new"], dtype=str)
     new_df = new_df.iloc[:-1,:].copy()
     new_df.columns = [col.lower().replace(" ", "_").replace(".","_") for col in new_df.columns]
-    new_df.drop(columns=["origen"], inplace=True)
+    new_df.rename(columns={"origen":"origen_ff"}, inplace=True)
 
     # Optimize the dataframes
     hist_df = optimize_columns(hist_df)
@@ -496,7 +496,7 @@ def consolidate_final_df(new_df, hist_df):
         col for col in new_df.columns 
         if ("pagado" in col or "ejercido" in col or "pre-modificado" in col) 
         and ("acum" not in col) 
-    ] #+ ["informe"]
+    ] + ["origen_ff"]
 
     cols_for_new_df = relevant_columns + extra_columns_for_new_df 
 
@@ -572,7 +572,7 @@ def dimensional_creator(df_melted):
         "dim_tipogasto": ['cve_cog','capítulo','concepto','part__genérica','part__específica','cve_tg','tipo_de_gasto','rubro'],
         "dim_fuente": [
             'ff','cve_conac1','conac1','cve_conac2','conac2','federal_/_estatal','cve_año','año_ff','cve_ramo','ramo',
-            'origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp'],
+            'origen_ramo','cve_fondo','fondo','nombre_ff','cve_origen','origen','cve_ltp','ltp',"origen_ff"],
         "dim_programa": ['cve_prog','prog','cve_fun','finalidad','función','sub__función','cve_a/s','a/s','cve_pedq','pedq'],
         "dim_entidad": ['cve_urg', 'urg', 'cve_adm', 'adm', 'entidad', 'entidad_2', 'entidad_gs'],
         "dim_sector": ['cve_nue', 'estatus', 'nombre_nue', 'nue_sin_oya', 'sector', 'dirección'],#,"nombre_dependencia"],
@@ -785,6 +785,7 @@ def dimensionals_creator_on_sql(conn_dict):
         Column('origen', String(255)),
         Column('cve_ltp', String(255)),
         Column('ltp', String(255)),
+        Column('origen_ff', String(255)),
         extend_existing=True
     )
 

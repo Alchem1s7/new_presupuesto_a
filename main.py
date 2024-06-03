@@ -36,10 +36,10 @@ def connect_to_data_sources():
     project_path = input("Hello. Please enter the project path: \n")
     postgres_pass = input("Hello. Please enter the db password: \n")
     main_sources_path = os.path.join(project_path, "main_sources")
-    hist_path = os.path.join(main_sources_path, "hist_abril.csv")
-    new_path = os.path.join(main_sources_path, "new_abril.csv")
+    hist_path = os.path.join(main_sources_path, "historic_data_2018_2023.parquet")
+    new_path = os.path.join(main_sources_path, "update.csv")
     dimensions_path = os.path.join(project_path, "dimension_sources")
-    print("\n[INFO] Starting: connect_to_data_sources...")
+    print("\n[INFO] Starting: Connecting to data sources...")
 
     # Dimension paths
     rules_path = os.path.join(dimensions_path, "reglas_transicion.csv")
@@ -78,15 +78,15 @@ def connect_to_data_sources():
         "rubro_nup":rubro_path
     }
 
-    print("[INFO] Finished: connect_to_data_sources")
+    print("[INFO] Finished: Connecting to data sources")
     return connections_dict
 
 
 def main_data_consolidation(connections_dict:dict):
 
-    print("\n[INFO] Starting: Main data consolidation...")
+    print("\n[INFO] Starting: Loading big tables...")
     # Historical data
-    hist_df = pd.read_csv(connections_dict["hist"], dtype=str)
+    hist_df = pd.read_parquet(connections_dict["hist"])
     hist_df.columns = [i.lower().replace(" ","_").replace(".","_") for i in hist_df.columns]
     hist_df.rename(
         columns={
@@ -101,13 +101,12 @@ def main_data_consolidation(connections_dict:dict):
     new_df.columns = [col.lower().replace(" ", "_").replace(".","_") for col in new_df.columns]
     new_df.rename(columns={"origen":"origen_ff"}, inplace=True)
 
-    # Optimize the dataframes
-    hist_df = optimize_columns(hist_df)
+    # Optimize the new dataframe
     new_df = optimize_columns(new_df)
 
     # Free memory
     gc.collect()
-    print("[INFO] Finished: Main data consolidation")
+    print("[INFO] Finished: Loading big tables")
 
     return hist_df, new_df
 
@@ -261,13 +260,13 @@ def mapping_columns(new_df, connections_dict):
     pe9_mask = new_df.cve_prog.str.lower().str.startswith("pe9")
     independient_columns_dict["estatus"] = pe9_mask.map({True:"NO ASIGNADO",False:"ASIGNADO"})
 
-    # direccion
+    # dirección
 
     first_dict_direccion = external_data_dict["dim_nue"].set_index("Depto.")["Agrupado en:"].to_dict()
     second_dict_direccion = external_data_dict["dim_nue"].set_index("Depto.")["DESCRIPCION"].to_dict()
 
-    independient_columns_dict["direccion"] = new_df["cve_nue"].map(first_dict_direccion)
-    independient_columns_dict["direccion"] = independient_columns_dict["direccion"].map(second_dict_direccion)
+    independient_columns_dict["dirección"] = new_df["cve_nue"].map(first_dict_direccion)
+    independient_columns_dict["dirección"] = independient_columns_dict["dirección"].map(second_dict_direccion)
 
     # entidad gs
     mask_entidadgs = new_df.cadena_siafeq.str.startswith("03")
@@ -435,21 +434,11 @@ def consolidate_final_df(new_df, hist_df):
 
         "entidad_": "ENTIDAD 2",
         "federal/estatal":"FEDERAL / ESTATAL",
-        "cve_año": "CVE AÑO",
-        "cve_ramo": "CVE RAMO",
         "ramo1": "RAMO",
         "ramo2": "ORIGEN RAMO",
-        "cve_fondo": "CVE FONDO",
-        "cve_origen": "CVE ORIGEN",
         "origen1": "ORIGEN",
-        "estatus": "ESTATUS",
-        "nombre_nue": "NOMBRE NUE",
-        "nue_sin_oya": "NUE SIN OYA",
         "sector1": "SECTOR",
-        "direccion": "DIRECCIÓN",
         "proyecto_new": "NOMBRE NUP",
-        "concepto_ef": "CONCEPTO EF",
-        "entidad_gs": "ENTIDAD GS",
         "finalidad1":"finalidad",
         "concepto1":"concepto"
     }
@@ -477,20 +466,6 @@ def consolidate_final_df(new_df, hist_df):
     # Stablish the new column names for second time
     # By doing this, the numeric columns in new_df and hist_df can match
     new_df.rename(columns=name_mapping, inplace=True)
-    # Filter the columns we are not interested in
-    relevant_columns = []
-    unnecessary_column_names = [
-        'devengado_acumulado', 'total_aprobado', 'total_modificado', 
-        'total_pre-comprometido', 'total_comprometido', 'total_devengado', 
-        'total_saldo',"nue","nup"
-    ] 
-
-    for col in hist_df.columns:
-
-        if col not in unnecessary_column_names:
-            relevant_columns.append(col)
-    
-    hist_df = hist_df[relevant_columns]
 
     extra_columns_for_new_df = [
         col for col in new_df.columns 
@@ -498,11 +473,11 @@ def consolidate_final_df(new_df, hist_df):
         and ("acum" not in col) 
     ] + ["origen_ff","dependencia"] 
 
-    cols_for_new_df = relevant_columns + extra_columns_for_new_df 
+    cols_for_new_df = list(hist_df.columns) + extra_columns_for_new_df 
 
     # Concatenate both dataframes
     full_df = pd.concat(
-        [hist_df[hist_df.año != "2024"], new_df[cols_for_new_df]],
+        [hist_df, new_df[cols_for_new_df]],
         ignore_index=True
     )
 

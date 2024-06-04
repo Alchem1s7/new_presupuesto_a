@@ -1,0 +1,25 @@
+
+services:
+  app:
+    build: .
+    environment:
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASSWORD=finanzas123
+      - DB_NAME=presupuesto_a
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=presupuesto_a
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=finanzas123
+    ports:
+      - "5434:5432"  # Mapea el puerto 5432 del contenedor al puerto 5433 en tu host
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

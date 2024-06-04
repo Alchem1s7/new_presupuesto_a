@@ -33,8 +33,8 @@ logging.basicConfig(level=logging.INFO)
 def connect_to_data_sources():
     
     # Main paths
-    project_path = input("Hello. Please enter the project path: \n")
-    postgres_pass = input("Hello. Please enter the db password: \n")
+    project_path = "/app/project_folder"
+    #postgres_pass = input("Hello. Please enter the db password: \n")
     main_sources_path = os.path.join(project_path, "main_sources")
     hist_path = os.path.join(main_sources_path, "historic_data_2018_2023.parquet")
     new_path = os.path.join(main_sources_path, "update.csv")
@@ -56,6 +56,18 @@ def connect_to_data_sources():
     informe_cc_hist_path = os.path.join(dimensions_path, "cc_informe.csv")
     rubro_path = os.path.join(dimensions_path, "dim_rubro_nup.csv")
 
+    # data base
+
+    # Configuración de conexión utilizando variables de entorno
+    user = os.getenv('DB_USER', 'postgres')
+    password = os.getenv('DB_PASSWORD', 'finanzas123')
+    host = os.getenv('DB_HOST', 'db')
+    dbname = os.getenv('DB_NAME', 'presupuesto_a')
+    port = os.getenv('DB_PORT', '5432')  # Asegúrate de definir esto si es necesario
+
+    # URL de conexión
+    url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    
 
     # Gather all paths in one dict
     connections_dict = {
@@ -72,7 +84,7 @@ def connect_to_data_sources():
         "new": new_path,
         "clas_admin":clas_admin_path,
         "clasiff":clasiff_path,
-        "postgres_pass":postgres_pass,
+        "url_engine":url,
         "informe":informe_path,
         "informe_cc_hist":informe_cc_hist_path,
         "rubro_nup":rubro_path
@@ -607,10 +619,8 @@ def get_tables(engine):
 def drop_all_tables(conn_dict):
     logging.info("Starting: Dropping all tables in the database...")
     try:
-        passw = conn_dict['postgres_pass']
-        engine = create_engine(
-            f"postgresql+psycopg2://postgres:{passw}@localhost:5432/new_pa"
-        )
+        engine_url = conn_dict['url_engine']
+        engine = create_engine(engine_url)
 
         sorted_tables = get_tables(engine)
         if not sorted_tables:

@@ -18,7 +18,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5434:5432"  # Mapea el puerto 5432 del contenedor al puerto 5433 en tu host
+      - "5434:5432" 
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

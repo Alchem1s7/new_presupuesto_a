@@ -60,7 +60,7 @@ def connect_to_data_sources():
 
     # Configuración de conexión utilizando variables de entorno
     user = os.getenv('DB_USER', 'postgres')
-    password = os.getenv('DB_PASSWORD', 'finanzas123')
+    password = os.getenv('POSTGRES_PASSWORD')
     host = os.getenv('DB_HOST', 'db')
     dbname = os.getenv('DB_NAME', 'presupuesto_a')
     port = os.getenv('DB_PORT', '5432')  # Asegúrate de definir esto si es necesario

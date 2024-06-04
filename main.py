@@ -39,7 +39,7 @@ def connect_to_data_sources():
     hist_path = os.path.join(main_sources_path, "historic_data_2018_2023.parquet")
     new_path = os.path.join(main_sources_path, "update.csv")
     dimensions_path = os.path.join(project_path, "dimension_sources")
-    print("\n[INFO] Starting: Connecting to data sources...")
+    logging.info("\nStarting: Connecting to data sources...")
 
     # Dimension paths
     rules_path = os.path.join(dimensions_path, "reglas_transicion.csv")
@@ -58,15 +58,14 @@ def connect_to_data_sources():
 
     # data base
 
-    # Configuración de conexión utilizando variables de entorno
-    user = os.getenv('DB_USER', 'postgres')
-    password = os.getenv('POSTGRES_PASSWORD')
-    host = os.getenv('DB_HOST', 'db')
-    dbname = os.getenv('DB_NAME', 'presupuesto_a')
-    port = os.getenv('DB_PORT', '5432')  # Asegúrate de definir esto si es necesario
+    user = os.getenv('DB_USER')
+    password = os.getenv('DB_PASSWORD')
+    host = os.getenv('DB_HOST')
+    dbname = os.getenv('DB_NAME')
+    port = os.getenv('DB_PORT') 
 
     # URL de conexión
-    url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
     
 
     # Gather all paths in one dict
@@ -90,13 +89,13 @@ def connect_to_data_sources():
         "rubro_nup":rubro_path
     }
 
-    print("[INFO] Finished: Connecting to data sources")
+    logging.info("Finished: Connecting to data sources")
     return connections_dict
 
 
 def main_data_consolidation(connections_dict:dict):
 
-    print("\n[INFO] Starting: Loading big tables...")
+    logging.info("\nStarting: Loading big tables...")
     # Historical data
     hist_df = pd.read_parquet(connections_dict["hist"])
     hist_df.columns = [i.lower().replace(" ","_").replace(".","_") for i in hist_df.columns]
@@ -118,12 +117,12 @@ def main_data_consolidation(connections_dict:dict):
 
     # Free memory
     gc.collect()
-    print("[INFO] Finished: Loading big tables")
+    logging.info("Finished: Loading big tables")
 
     return hist_df, new_df
 
 def columns_expander(rules_df, new_df):
-    print("\n[INFO] Starting: Working with columns expansion...")
+    logging.info("\nStarting: Working with columns expansion...")
     # Rules for the columns that are the combination of two columns
     two_cols_rules_df = rules_df[rules_df.Filtros == 1].reset_index(drop=True).copy()
     # Split the column and append those as new columns
@@ -144,7 +143,7 @@ def columns_expander(rules_df, new_df):
             raise Exception("The pair columns in the transformation df doesn't match the cols from the new_df")
     except Exception as e:
 
-        print(e)
+        logging.info(e)
     
     # Create a dict to map names
     dict_pair_cols = (
@@ -164,20 +163,20 @@ def columns_expander(rules_df, new_df):
                 old = old + "1"
             new_columns[old] = new_df[pair[0]].astype(str).replace(r'\.0+', "", regex=True) + " " + new_df[pair[1]].astype(str)
         except KeyError as e:
-            print(f"Error: {e}. Column pair: {pair}")
+            logging.info(f"Error: {e}. Column pair: {pair}")
             raise
     
     new_df = pd.concat([new_df, pd.DataFrame(new_columns)], axis=1)
     
     gc.collect()
-    print("[INFO] Finished: Working with columns expansion")
+    logging.info("Finished: Working with columns expansion")
     return new_df
     
 
 
 def change_columns_names(rules_df, new_df, hist_df):
 
-    print("\n[INFO] Starting: Changing column names...")
+    logging.info("\nStarting: Changing column names...")
     names_df = rules_df[rules_df.Filtros == 0].copy()
 
     names_df.loc[:,"Nueva base"] = names_df["Nueva base"].str.lower().replace(r"[.\s]", "_", regex=True)
@@ -202,7 +201,7 @@ def change_columns_names(rules_df, new_df, hist_df):
             raise Exception("Las columnas de la base histórica no cuadran con la tabla de reglas.")
             
     except Exception as e:
-        print(e)
+        logging.info(e)
 
     
     # Create a dict to map the col names
@@ -224,13 +223,13 @@ def change_columns_names(rules_df, new_df, hist_df):
     new_df.columns = to_append_colnames
 
     gc.collect()
-    print("[INFO] Finished: Changing column names")
+    logging.info("Finished: Changing column names")
     return new_df
 
 
 def mapping_columns(new_df, connections_dict):
     
-    print("\n[INFO] Starting: Mapping columns with external data...")
+    logging.info("\nStarting: Mapping columns with external data...")
     
     # Load of external data sources to map columns
     external_data_dict = {
@@ -433,13 +432,13 @@ def mapping_columns(new_df, connections_dict):
     new_df = pd.concat([new_df, dependent_columns_df], axis=1)
 
     gc.collect()
-    print("[INFO] Finished: Mapping columns with external data")
+    logging.info("Finished: Mapping columns with external data")
     return new_df, external_data_dict
     
     
 def consolidate_final_df(new_df, hist_df):
 
-    print("\n[INFO] Starting: Melting dataframe...")
+    logging.info("\nStarting: Melting dataframe...")
 
     
     change_new_column_names = {
@@ -487,15 +486,25 @@ def consolidate_final_df(new_df, hist_df):
 
     cols_for_new_df = list(hist_df.columns) + extra_columns_for_new_df 
 
+    # Filter empty values
+    # Before doing melt delete empty records in both dataframes
+    numeric_pattern = 'aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado|pre-modificado'
+    numeric_columns = [col for col in new_df.columns if re.search(numeric_pattern, col)]
+    new_df = new_df[new_df[numeric_columns].apply(lambda row: row.notna().any() and row.sum() != 0, axis=1)]
+
+    numeric_columns = [col for col in hist_df.columns if re.search(numeric_pattern, col)]
+    hist_df = hist_df[hist_df[numeric_columns].apply(lambda row: row.notna().any() and row.sum() != 0, axis=1)]
+    
+    
     # Concatenate both dataframes
     full_df = pd.concat(
         [hist_df, new_df[cols_for_new_df]],
         ignore_index=True
     )
-
+    
     # Create a melt dataframe
     # The id vars are the non-numeric columns
-    pattern = re.compile('aprobado|modificado|pre-comprometido|comprometido|devengado|saldo|ejercido|pagado|pre-modificado')
+    pattern = re.compile(numeric_pattern)
     id_vars = [col for col in full_df.columns if not pattern.search(col)]
     value_vars = list(set(full_df.columns) - set(id_vars))
 
@@ -550,12 +559,12 @@ def consolidate_final_df(new_df, hist_df):
     df_melted.drop(columns=["mes", "mes_y_momento"], inplace=True)
     
     gc.collect()
-    print("[INFO] Finishing: Melting dataframe")
+    logging.info("Finishing: Melting dataframe")
     return df_melted
 
 
 def dimensional_creator(df_melted):
-    print("\n[INFO] Starting: Creation of dimensional dataframes...")
+    logging.info("\nStarting: Creation of dimensional dataframes...")
     
     dim_defs = {
         "dim_tipogasto": ['cve_cog','capítulo','concepto','part__genérica','part__específica','cve_tg','tipo_de_gasto','rubro'],
@@ -586,7 +595,7 @@ def dimensional_creator(df_melted):
     # Bucle principal
     for dim_name, cols in dim_defs.items():
 
-        print(f"[INFO] Iniciando: {dim_name}")
+        logging.info(f"Iniciando: {dim_name}")
         dim_table = df_melted[cols].drop_duplicates().reset_index(drop=True)
 
 
@@ -602,9 +611,9 @@ def dimensional_creator(df_melted):
         df_melted[id_col] = df_melted[cols].apply(tuple, axis=1).map(id_map)
         df_melted.drop(columns=cols, inplace=True)
 
-        print(f"[INFO] Finalizado: {dim_name}")
+        logging.info(f"Finalizado: {dim_name}")
     
-    print("[INFO] Finalizado: Creación de dataframes dimensionales")
+    logging.info("Finalizado: Creación de dataframes dimensionales")
     gc.collect()
     return dim_tables_dict, df_melted
 
@@ -655,16 +664,16 @@ def dimensionals_creator_on_sql(conn_dict):
     engine = drop_all_tables(conn_dict)
     metadata = MetaData()
 
-    print("\n[INFO] Starting: Creation of the schema in the database...")
-    print(engine)
+    logging.info("\nStarting: Creation of the schema in the database...")
+    logging.info(engine)
 
     with engine.begin() as connection:
         metadata.reflect(bind=engine)
 
         for table in reversed(metadata.sorted_tables):
-            print(f"[INFO] Dropping table: {table.name}")
+            logging.info(f"Dropping table: {table.name}")
             connection.execute(text(f"DROP TABLE IF EXISTS {table.name} CASCADE"))
-            print(f"[INFO] The table {table.name} has been dropped successfully")
+            logging.info(f"The table {table.name} has been dropped successfully")
 
     
         connection.commit()
@@ -798,7 +807,7 @@ def dimensionals_creator_on_sql(conn_dict):
     with engine.begin() as connection:
         metadata.create_all(engine)
     
-    print("[INFO] Finished: Creation of the schema in the database")
+    logging.info("Finished: Creation of the schema in the database")
     
     metadata.clear()
     gc.collect()
@@ -808,19 +817,19 @@ def dimensionals_creator_on_sql(conn_dict):
 
 def loading_data(engine, dimension_tables_dict):
     
-    print("\n[INFO] Starting: Loading of data tables in the database...")
+    logging.info("\nStarting: Loading of data tables in the database...")
 
     for table_name, data in dimension_tables_dict.items():
         
-        print(f"[INFO] Starting: Loading of {table_name} in the database")
+        logging.info(f"Starting: Loading of {table_name} in the database")
         if table_name != "fact_gasto":
             data.to_sql(table_name, con=engine, if_exists="append", index=False)
         else:
             data.to_sql(table_name, con=engine, if_exists="append", index=False, method=psql_insert_copy)
-        print(f"[INFO] Finished: Loading of {table_name} in the database")
+        logging.info(f"Finished: Loading of {table_name} in the database")
 
 
-    print("ALL DONE BABY")
+    logging.info("ALL DONE BABY")
 
 
 def workflow():
@@ -886,7 +895,7 @@ def workflow():
     
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"\n[INFO] Total execution time: {elapsed_time / 60:.2f} minutes")
+    logging.info(f"\nTotal execution time: {elapsed_time / 60:.2f} minutes")
 
 if __name__ == "__main__":
     workflow()

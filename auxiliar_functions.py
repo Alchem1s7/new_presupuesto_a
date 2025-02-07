@@ -18,21 +18,63 @@ def optimize_columns(df):
     return df
 
 
-def map_columns_using_dict(dim_df, df, dim_cols_dict, df_cols_dict):
+def map_columns_using_dict(index_df, target_df, dim_cols_dict, target_cols_dict):
 
-    dim_index_col = list(dim_cols_dict.keys())[0]
-    dim_value_col = dim_cols_dict[dim_index_col]
+    # Dimension dataframe columns
+    dim_index_col = next(iter(dim_cols_dict))
+    value_to_map_col = dim_cols_dict[dim_index_col]
+    # Create a dictionary to use in the mapping
+    dict_to_map = index_df.set_index(dim_index_col)[value_to_map_col].to_dict()
 
-    new_col_name =  list(df_cols_dict.keys())[0]
-    map_in_col = df_cols_dict[new_col_name]
+    # Column names in target dataframe
+    name_in_df = next(iter(target_cols_dict))
+    map_in_col = target_cols_dict[name_in_df]
 
-
-    dict_to_map = dim_df.set_index(dim_index_col)[dim_value_col].to_dict()
-
-    new_series = df[map_in_col].map(dict_to_map)
+    # Map the values in the target dataframe
+    new_series = target_df[map_in_col].map(dict_to_map)
     gc.collect()
 
     return new_series
+
+# Define the improved mapping function
+def map_columns_using_dict_v2(
+        index_df: pd.DataFrame, 
+        index_cols: tuple[str, str], 
+        target_df: pd.DataFrame, 
+        target_col: str
+    ) -> pd.Series:
+    """
+    Maps values from one DataFrame to another using a dictionary.
+
+    Args:
+        index_df: DataFrame containing the mapping columns.
+        index_cols: Tuple of (index_column, value_column) in index_df.
+        target_df: DataFrame containing the target column to map values to.
+        target_col: Name of the column in target_df to map values into.
+
+    Returns:
+        A pandas Series with the mapped values.
+    """
+    # Input validation
+    if not isinstance(index_cols, tuple) or len(index_cols) != 2:
+        raise ValueError("index_cols must be a tuple of two column names.")
+    
+    index_col, value_col = index_cols
+    if index_col not in index_df.columns or value_col not in index_df.columns:
+        raise ValueError(f"Columns {index_col} or {value_col} not found in index_df.")
+    
+    if target_col not in target_df.columns:
+        raise ValueError(f"Column {target_col} not found in target_df.")
+
+    # Create mapping dictionary
+    mapping_dict = index_df.set_index(index_col)[value_col].to_dict()
+
+    # Map values
+    new_series = target_df[target_col].map(mapping_dict)
+    gc.collect()
+    return new_series
+
+
 
 
 def informe_de_gobierno(row, mapping_dicts):

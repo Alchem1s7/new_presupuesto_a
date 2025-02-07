@@ -22,6 +22,7 @@ from sqlalchemy import (
 from auxiliar_functions import (
     optimize_columns,
     map_columns_using_dict,
+    map_columns_using_dict_v2,
     informe_de_gobierno,
     rename_numeric_columns,
     psql_insert_copy
@@ -49,7 +50,8 @@ def connect_to_data_sources():
     desc_prep_path = os.path.join(dimensions_path, "desc_prep.csv")
     clasif_og_path = os.path.join(dimensions_path, "clasif_og.csv")
     nup_path = os.path.join(dimensions_path, "nup.csv")
-    nue_new_path = os.path.join(dimensions_path, "nue_dimension_new.csv")
+    #nue_new_path = os.path.join(dimensions_path, "nue_dimension_new.csv")
+    nue_new_path = os.path.join(dimensions_path, 'new_nue_v2.csv')
     clas_admin_path = os.path.join(dimensions_path, "clas_admin.csv")
     clasiff_path = os.path.join(dimensions_path, "clasif_ff.csv")
     informe_path = os.path.join(dimensions_path, "informe_de_gobierno.csv")
@@ -301,100 +303,96 @@ def mapping_columns(new_df, connections_dict):
 
     # año
     independient_columns_dict["año"] = pd.Series("2024", index=new_df.index)
-
-    
     # entidad
-    independient_columns_dict["entidad_"] = map_columns_using_dict(
-        external_data_dict["dim_clasif_urg"], 
-        new_df,
-        {"CVE U.R.G":"ENTIDAD"},
-        {"entidad_":"cve_urg"}
+    independient_columns_dict["entidad_"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_clasif_urg"], 
+        index_cols=("CVE U.R.G", "ENTIDAD"), 
+        target_df=new_df, 
+        target_col="cve_urg"
     )
 
     # nombre nue
-    independient_columns_dict["nombre_nue"] = map_columns_using_dict(
-        external_data_dict["dim_nue"], 
-        new_df,
-        {"Depto.":"Agrupa dep"},
-        {"nombre_nue":"cve_nue"}
+    independient_columns_dict["nombre_nue"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_nue"], 
+        index_cols=("Depto.", "Agrupa dep"), 
+        target_df=new_df, 
+        target_col="cve_nue"
     )
 
     # nue sin oya
-    independient_columns_dict["nue_sin_oya"] = map_columns_using_dict(
-        external_data_dict["new_dim_nue"], 
-        new_df,
-        {"NUE5":"DEP. EJECUTORA"},
-        {"nue_sin_oya":"cve_nue"}
+    independient_columns_dict["nue_sin_oya"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["new_dim_nue"], 
+        index_cols=("NUE5", "DEP. EJECUTORA"), 
+        target_df=new_df, 
+        target_col="cve_nue"
     )
-    
-    if independient_columns_dict["nue_sin_oya"].hasnans:
 
+    if independient_columns_dict["nue_sin_oya"].hasnans:
         nues_without_oya = new_df.loc[independient_columns_dict["nue_sin_oya"].isna(), "cve_nue"].unique()
         
         for nue in nues_without_oya:
-
             aff = external_data_dict["new_dim_nue"][external_data_dict["new_dim_nue"]["NUE5"] == nue]["Afectable"].values[0]
             dep = external_data_dict["new_dim_nue"][external_data_dict["new_dim_nue"]["NUE5"] == aff]["DEP. EJECUTORA"].values[0]
-            #new_df.loc[(new_df.nue_sin_oya.isna()) & (new_df.cve_nue == nue), "nue_sin_oya"] = dep
-            independient_columns_dict["nue_sin_oya"].loc[(independient_columns_dict["nue_sin_oya"].isna()) & (new_df["cve_nue"] == nue)] = dep
+            independient_columns_dict["nue_sin_oya"].loc[
+                (independient_columns_dict["nue_sin_oya"].isna()) & (new_df["cve_nue"] == nue)
+            ] = dep
 
     # concepto ef
-    independient_columns_dict["concepto_ef"] = map_columns_using_dict(
-        external_data_dict["dim_clasf_og"], 
-        new_df,
-        {"COG2":"CONCEPTO EF"},
-        {"concepto_ef":"cog_n2"}
+    independient_columns_dict["concepto_ef"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_clasf_og"], 
+        index_cols=("COG2", "CONCEPTO EF"), 
+        target_df=new_df, 
+        target_col="cog_n2"
     )
 
     # proyecto 3
-    independient_columns_dict["rubro_nup"] = map_columns_using_dict(
-        external_data_dict["rubro_nup_dim"],
-        new_df,
-        {"NUP":"PROYECTO 2"},
-        {"rubro_nup":"cve_nup"}
+    independient_columns_dict["rubro_nup"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["rubro_nup_dim"], 
+        index_cols=("NUP", "PROYECTO 2"), 
+        target_df=new_df, 
+        target_col="cve_nup"
     )
     independient_columns_dict["rubro_nup"] = independient_columns_dict["rubro_nup"].str.strip()
 
     # proyecto new
-    independient_columns_dict["proyecto_new"] = map_columns_using_dict(
-        external_data_dict["dim_nup"],
-        new_df,
-        {"Clave NUP":"NUP"},
-        {"proyecto_new":"cve_nup"}
+    independient_columns_dict["proyecto_new"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_nup"], 
+        index_cols=("Clave NUP", "NUP"), 
+        target_df=new_df, 
+        target_col="cve_nup"
     )
     independient_columns_dict["proyecto_new"].loc[independient_columns_dict["proyecto_new"].isna()] = independient_columns_dict["rubro_nup"]
     independient_columns_dict["proyecto_new"] = independient_columns_dict["proyecto_new"].str.strip()
 
     # nombre ff
-    independient_columns_dict["nombre_ff"] = map_columns_using_dict(
-        external_data_dict["clasifff_dim"],
-        new_df,
-        {"FUENTE DE FINANCIAMIENTO":"Nombre FF SIAFEQ"},
-        {"nombre_ff":"ff"}
+    independient_columns_dict["nombre_ff"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["clasifff_dim"], 
+        index_cols=("FUENTE DE FINANCIAMIENTO", "Nombre FF SIAFEQ"), 
+        target_df=new_df, 
+        target_col="ff"
     )
 
+    # Create a DataFrame from the independent columns dictionary
     independient_cols_df = pd.DataFrame(independient_columns_dict)
     new_df = pd.concat([new_df, independient_cols_df], axis=1)
 
-    # Second dataframe concatenation
-    # We use the same approach but now, with the dependent columns ------------------------------------
-
+    # Second dataframe concatenation (dependent columns)
     dependent_columns_dict = {}
 
-     # origen ramo
-    dependent_columns_dict["ramo2"] = map_columns_using_dict(
-        external_data_dict["dim_ff"], 
-        new_df,
-        {"CVE RAMO":"RAMO2"},
-        {"ramo2":"cve_ramo"}
+    # origen ramo
+    dependent_columns_dict["ramo2"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_ff"], 
+        index_cols=("CVE RAMO", "RAMO2"), 
+        target_df=new_df, 
+        target_col="cve_ramo"
     )
 
     # origen 
-    dependent_columns_dict["origen1"] = map_columns_using_dict(
-        external_data_dict["dim_ff"], 
-        new_df,
-        {"CVE ORIGEN":"ORIGEN"},
-        {"origen1":"cve_origen"}
+    dependent_columns_dict["origen1"] = map_columns_using_dict_v2(
+        index_df=external_data_dict["dim_ff"], 
+        index_cols=("CVE ORIGEN", "ORIGEN"), 
+        target_df=new_df, 
+        target_col="cve_origen"
     )
 
     # Sector
@@ -542,7 +540,9 @@ def consolidate_final_df(new_df, hist_df):
     df_melted["mes"] = df_melted["mes"].str.strip()
     df_melted["fecha"] = "01/" + df_melted["mes"].map(dict_to_map_months) + "/" + df_melted["año"].astype(str)
     df_melted["fecha"] = pd.to_datetime(df_melted["fecha"], dayfirst=True)
+    print(df_melted.fecha.max())
     
+    df_melted['sector'] = df_melted['sector'].fillna('Desconocido')
     df_melted.loc[df_melted['sector'].str.startswith("SECTOR"), "sector"] = df_melted["sector"].replace("SECTOR", "", regex=True).str.strip()
     df_melted.loc[df_melted['dependencia'].str.startswith("SECTOR",na=False), "dependencia"] = df_melted["dependencia"].replace("SECTOR", "", regex=True).str.strip()
 
